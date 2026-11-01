@@ -1,0 +1,49 @@
+name: Assemble data2.json
+
+# One-off helper: data2.json is 7.4 MB, which is larger than the API can accept in a
+# single request, so it was committed in three text chunks under .assemble/.
+# This workflow concatenates them into data2.json, verifies the exact size and hash,
+# commits the result, and then deletes the chunks and this workflow file.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  assemble:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Concatenate chunks
+        run: |
+          set -euo pipefail
+          cat .assemble/data2.part1 .assemble/data2.part2 .assemble/data2.part3 > data2.json
+          echo "size: $(wc -c < data2.json) bytes"
+          echo "sha256: $(sha256sum data2.json | cut -d' ' -f1)"
+
+      - name: Verify size and hash
+        run: |
+          set -euo pipefail
+          size=$(wc -c < data2.json)
+          if [ "$size" -ne 7356611 ]; then
+            echo "::error::unexpected size: $size (expected 7356611)"; exit 1
+          fi
+          sha=$(sha256sum data2.json | cut -d' ' -f1)
+          if [ "$sha" != "4ce0ee78401667c0f775d22f99e029463a4d964047df2f4449c1ec5d6d9f41e4" ]; then
+            echo "::error::hash mismatch: $sha"; exit 1
+          fi
+          echo "OK: data2.json is byte-identical to the original."
+
+      - name: Commit data2.json and remove the temporary files
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git rm -r --quiet .assemble
+          git rm --quiet .github/workflows/assemble-data.yml
+          git commit -m "Add data2.json (assembled) and remove temporary chunks"
+          git push
